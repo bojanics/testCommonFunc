@@ -8,7 +8,7 @@ using Newtonsoft.Json;
 
 public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceWriter log)
 {
-const string separate_symbol = ",";
+            const string separate_symbol = ",";
             MailContents mail = new MailContents();
             bool hasError = false;
             string errorMessage = string.Empty;
