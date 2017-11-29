@@ -15,6 +15,7 @@ using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Security;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 private static readonly SecureRandom Random = new SecureRandom();
         private static readonly Random _rand = new Random((int)DateTime.Now.Ticks);
@@ -168,7 +169,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
 
             log.Info($"Edgcast Token = {strResult}");
 
-            return req.CreateResponse(HttpStatusCode.OK, strResult);
+            return req.CreateResponse(HttpStatusCode.OK, new JObject{ {"token", strResult } } );
 }
 
 public static string NextRandomString(int length)
