@@ -1,6 +1,9 @@
+#r "Newtonsoft.Json"
+
 using System.Net;
 using System.Net.Http;
 using System;
+using Newtonsoft.Json.Linq;
 
 public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceWriter log)
 {
@@ -84,8 +87,11 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                 statusMessage = ex.Message;
             }
 
-            string code = Convert.ToString((int)statusCode);
-            string result = "{\"statusCode\": \"" + code + "\", \"statusMessage\": \"" + statusMessage + "\" }";
-            return req.CreateResponse(statusCode, result);
+            int code = (int)statusCode;
+            
+            return req.CreateResponse(statusCode, new JObject{
+                { "statusCode", code },
+                {"statusMessage", statusMessage}
+            });
 
         }
