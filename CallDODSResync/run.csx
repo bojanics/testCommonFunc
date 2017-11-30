@@ -16,6 +16,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             string password = string.Empty;
             HttpStatusCode statusCode = HttpStatusCode.OK;
             string statusMessage = string.Empty;
+            string DODSCacheResyncReport = string.Empty;
 
             try
             {
@@ -41,8 +42,8 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
 
                     var uri = new Uri(request_url);
                     var _re = HttpWebRequest.Create(uri) as HttpWebRequest;
-                    
-                    if(!string.IsNullOrEmpty(userName) && !string.IsNullOrEmpty(password))
+
+                    if (!string.IsNullOrEmpty(userName) && !string.IsNullOrEmpty(password))
                     {
                         NetworkCredential myCred = new NetworkCredential(userName, password);
                         CredentialCache credsCache = new CredentialCache();
@@ -58,6 +59,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                         {
                             statusCode = _rep.StatusCode;
                             statusMessage = (int)_rep.StatusCode + " " + _rep.StatusDescription;
+                            DODSCacheResyncReport = _rep.GetResponseHeader("DODSCacheResyncReport");
                         }
                     }
                 }
@@ -74,6 +76,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                     response = (HttpWebResponse)webex.Response;
                     statusCode = response.StatusCode;
                     statusMessage = response.StatusDescription;
+                    DODSCacheResyncReport = response.GetResponseHeader("DODSCacheResyncReport");
                 }
                 else
                 {
@@ -88,10 +91,10 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             }
 
             int code = (int)statusCode;
-            
             return req.CreateResponse(statusCode, new JObject{
                 { "statusCode", code },
-                {"statusMessage", statusMessage}
+                {"statusMessage", statusMessage},
+                { "DODSCacheResyncReport", DODSCacheResyncReport}
             });
 
-        }
+        } 

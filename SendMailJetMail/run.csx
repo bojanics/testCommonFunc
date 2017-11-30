@@ -1,4 +1,4 @@
-#r "Newtonsoft.Json.dll"
+#r "Newtonsoft.Json"
 
 using System.Net;
 using System;
