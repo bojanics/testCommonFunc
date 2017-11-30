@@ -1,3 +1,6 @@
+#r "Mailjet.Client.dll"
+#r "Newtonsoft.Json.dll"
+
 using System.Net;
 using System;
 using Mailjet.Client;
@@ -12,36 +15,64 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             MailContents mail = new MailContents();
             bool hasError = false;
             string errorMessage = string.Empty;
+            const string _contentType = "Content-Type";
+            const string _fileName = "Filename";
+            const string _content = "Content";
 
             dynamic data = await req.Content.ReadAsAsync<object>();
-            mail.mjAPI_PubK = data?.MailJetAPI_PublicKey ?? string.Empty;
-            mail.mjAPI_PriK = data?.MailJetAPI_PrivateKey ?? string.Empty;
-            mail.senderMail = data?.SenderMail ?? string.Empty;
-            mail.senderName = data?.SenderName ?? string.Empty;
-            mail.subject = data?.Subject ?? string.Empty;
-            mail.body_txt = data?.Body_TextPlain ?? string.Empty;
-            mail.body_html = data?.Body_HTML ?? string.Empty;
-            mail.TempleteID = data?.TempleteID ?? string.Empty;
-
-            if(data?.Template_Variables != null && !string.IsNullOrEmpty(data?.Template_Variables.ToString()))
-            {
-                string temp = data?.Template_Variables.ToString();
-                mail.Template_Variables = JsonConvert.DeserializeObject<Dictionary<string, string>>(temp) ?? null;
-            }
-
-            if (data?.To != null)
-                mail.MailTo = ConvertRequestValue(data?.To.ToString());
-            if (data?.Cc != null)
-                mail.MailCc = ConvertRequestValue(data?.Cc.ToString());
-            if (data?.Bcc != null)
-                mail.MailBcc = ConvertRequestValue(data?.Bcc.ToString());
-            if (data?.Attachments_URL != null)
-                mail.Attachment_URL = ConvertRequestValue(data?.Attachments_URL.ToString());
 
             try
             {
+                mail.mjAPI_PubK = data?.MJAPI_PublicKey_Key ?? string.Empty;
+                mail.mjAPI_PubK_AppSetting = data?.MJAPI_PublicKey_AppSetting ?? string.Empty;
+
+                mail.mjAPI_PriK = data?.MJAPI_PrivateKey_Key ?? string.Empty;
+                mail.mjAPI_PriK_AppSetting = data?.MJAPI_PrivateKey_AppSetting ?? string.Empty;
+
+                mail.senderMail = data?.SenderMail ?? string.Empty;
+                mail.senderMail_AppSetting = data?.SenderMail_AppSetting ?? string.Empty;
+
+                mail.senderName = data?.SenderName ?? string.Empty;
+                mail.senderName_AppSetting = data?.SenderName_AppSetting ?? string.Empty;
+
+                mail.mjAPI_PubK = !string.IsNullOrEmpty(mail.mjAPI_PubK) ? mail.mjAPI_PubK : !string.IsNullOrEmpty(mail.mjAPI_PubK_AppSetting)? 
+                    System.Environment.GetEnvironmentVariable(mail.mjAPI_PubK_AppSetting) : string.Empty ;
+
+                mail.mjAPI_PriK = !string.IsNullOrEmpty(mail.mjAPI_PriK) ? mail.mjAPI_PriK : !string.IsNullOrEmpty(mail.mjAPI_PriK_AppSetting)?
+                    System.Environment.GetEnvironmentVariable(mail.mjAPI_PriK_AppSetting) : string.Empty;
+
+                mail.senderMail = !string.IsNullOrEmpty(mail.senderMail) ? mail.senderMail : !string.IsNullOrEmpty(mail.senderMail_AppSetting)?
+                    System.Environment.GetEnvironmentVariable(mail.senderMail_AppSetting) : string.Empty;
+
+                mail.senderName = !string.IsNullOrEmpty(mail.senderName) ? mail.senderName : !string.IsNullOrEmpty(mail.senderName_AppSetting)?
+                    System.Environment.GetEnvironmentVariable(mail.senderName_AppSetting) : string.Empty;
+
+                mail.subject = data?.Subject ?? string.Empty;
+                mail.body_txt = data?.Body_TextPlain ?? string.Empty;
+                mail.body_html = data?.Body_HTML ?? string.Empty;
+                mail.TemplateID = data?.TemplateID ?? string.Empty;
+
+                if (data?.To != null)
+                    mail.MailTo = ConvertRequestValue(data?.To.ToString());
+                if (data?.Cc != null)
+                    mail.MailCc = ConvertRequestValue(data?.Cc.ToString());
+                if (data?.Bcc != null)
+                    mail.MailBcc = ConvertRequestValue(data?.Bcc.ToString());
+                if (data?.Attachments_URL != null)
+                    mail.Attachment_URL = ConvertRequestValue(data?.Attachments_URL.ToString());
+
+                if (data?.Attachments_Base64 != null && !string.IsNullOrEmpty(data?.Attachments_Base64.ToString()))
+                {
+                    mail.Attachments_Base64 = JsonConvert.DeserializeObject<List<Base64Attachment>>(data?.Attachments_Base64.ToString());
+                }
+
+                if (data?.Template_Variables != null && !string.IsNullOrEmpty(data?.Template_Variables.ToString()))
+                {
+                    mail.Template_Variables = JsonConvert.DeserializeObject<Dictionary<string, string>>(data?.Template_Variables.ToString());
+                }
+
                 //Checked require fields.
-                if(string.IsNullOrEmpty(mail.mjAPI_PubK) || string.IsNullOrEmpty(mail.mjAPI_PriK) || string.IsNullOrEmpty(mail.senderMail)
+                if (string.IsNullOrEmpty(mail.mjAPI_PubK) || string.IsNullOrEmpty(mail.mjAPI_PriK) || string.IsNullOrEmpty(mail.senderMail)
                     || string.IsNullOrEmpty(mail.senderName) || string.IsNullOrEmpty(mail.MailTo))
                 {
                     string er = "MailJet API Public Key, MailJet API Private Key, Sender mail, Sender name, and Recipients are required.";
@@ -50,24 +81,26 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
 
                 JObject template_vars = null;
 
-                if(mail.Template_Variables != null && mail.Template_Variables.Count > 0)
+                if (mail.Template_Variables != null && mail.Template_Variables.Count > 0)
                 {
                     template_vars = new JObject();
-                    foreach(KeyValuePair<string,string> dic in mail.Template_Variables)
+                    foreach (KeyValuePair<string, string> dic in mail.Template_Variables)
                     {
                         template_vars.Add(dic.Key, dic.Value);
                     }
                 }
 
-                JObject[] attachmentMails = null;
+                //JObject[] attachmentMails = null;
+                List<JObject> attachmentMails = new List<JObject>();
 
                 if (!string.IsNullOrEmpty(mail.Attachment_URL))
                 {
                     string[] attachments = mail.Attachment_URL.Split(Convert.ToChar(separate_symbol));
 
-                    attachmentMails = new JObject[attachments.Length];
+                    //attachmentMails = new JObject[attachments.Length];
 
-                    for (int i = 0; i < attachments.Length; i++)
+                    //for (int i = 0; i < attachments.Length; i++)
+                    foreach (string at in attachments)
                     {
                         string file_name = string.Empty;
                         string fileName = string.Empty;
@@ -76,14 +109,14 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
 
                         using (WebClient wc = new WebClient())
                         {
-                            string uri = attachments[i];
-                            string[] uri_content = uri.Split('/');
+                            //string uri = attachments[i];
+                            string[] uri_content = at.Split('/');//uri.Split('/');
                             //Get file name from URL.
                             fileName = uri_content[uri_content.Length - 1];
-                            byte[] file_content = wc.DownloadData(uri);
+                            byte[] file_content = wc.DownloadData(at);
                             content = Convert.ToBase64String(file_content);
 
-                            var _re = HttpWebRequest.Create(uri) as HttpWebRequest;
+                            var _re = HttpWebRequest.Create(at) as HttpWebRequest;
                             if (_re != null)
                             {
                                 var _rep = _re.GetResponse() as HttpWebResponse;
@@ -93,12 +126,21 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                             }
                         }
 
-                        attachmentMails[i] = new JObject {{"Content-Type", contentType},
-                                          {"Filename",fileName},
-                                          {"content",content}};
+                        attachmentMails.Add(new JObject {{_contentType, contentType},
+                                          {_fileName,fileName},
+                                          {_content,content}});
                     }
+                }
 
-
+                if(mail.Attachments_Base64 != null)
+                {
+                    foreach(Base64Attachment at in mail.Attachments_Base64)
+                    {
+                        if(!string.IsNullOrEmpty(at.FileName) && !string.IsNullOrEmpty(at.Content_Type) && !string.IsNullOrEmpty(at.Base64_Content))
+                            attachmentMails.Add(new JObject {{_contentType, at.Content_Type},
+                                          {_fileName,at.FileName},
+                                          {_content,at.Base64_Content}});
+                    }
                 }
 
                 MailjetClient client = new MailjetClient(mail.mjAPI_PubK, mail.mjAPI_PriK);
@@ -111,16 +153,16 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                 .Property(Send.Subject, mail.subject)
                 .Property(Send.TextPart, mail.body_txt)
                 .Property(Send.HtmlPart, mail.body_html)
-                .Property(Send.MjTemplateID, mail.TempleteID)
+                .Property(Send.MjTemplateID, mail.TemplateID)
                 .Property(Send.MjTemplateLanguage, "True")
                 .Property(Send.To, mail.MailTo)
                 .Property(Send.Cc, mail.MailCc)
                 .Property(Send.Bcc, mail.MailBcc);
 
-                if(template_vars != null && template_vars.Count > 0)
+                if (template_vars != null && template_vars.Count > 0)
                     request.Property(Send.Vars, template_vars);
 
-                if (attachmentMails != null && attachmentMails.Length > 0)
+                if (attachmentMails.Count > 0)
                     request.Property(Send.Attachments, new JArray(attachmentMails));
 
                 MailjetResponse response = await client.PostAsync(request);
@@ -138,10 +180,11 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
 
                     hasError = true;
 
-                    errorMessage = $"StatusCode: {response.StatusCode} \r\n";
-                    errorMessage += $"ErrorInfo: {response.GetErrorInfo()} \r\n";
+                    errorMessage = $"StatusCode: {response.StatusCode} ";
+                    errorMessage += $"ErrorInfo: {response.GetErrorInfo()} ";
                     errorMessage += $"ErrorMessage: {response.GetErrorMessage()}";
-                }
+                    return req.CreateResponse((System.Net.HttpStatusCode)response.StatusCode, new JObject { { "result", $"Sending mail fail!! {errorMessage}" } });
+                }                
             }
             catch (Exception ex)
             {
@@ -150,8 +193,8 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             }
 
             return hasError
-                ? req.CreateResponse(HttpStatusCode.BadRequest, $"Sending mail fail!! \r\n{errorMessage}")
-                : req.CreateResponse(HttpStatusCode.OK, "Sending mail success.");
+                ? req.CreateResponse(HttpStatusCode.BadRequest, new JObject { { "result", $"Sending mail fail!! {errorMessage}" } })
+                : req.CreateResponse(HttpStatusCode.OK, new JObject { { "result", "Sending mail success." } });
         }
 
         public class MailContents
@@ -160,6 +203,10 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             public string mjAPI_PriK { get; set; }
             public string senderMail { get; set; }
             public string senderName { get; set; }
+            public string mjAPI_PubK_AppSetting { get; set; }
+            public string mjAPI_PriK_AppSetting { get; set; }
+            public string senderMail_AppSetting { get; set; }
+            public string senderName_AppSetting { get; set; }
             public string subject { get; set; }
             public string body_txt { get; set; }
             public string body_html { get; set; }
@@ -167,8 +214,16 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             public string MailCc { get; set; }
             public string MailBcc { get; set; }
             public string Attachment_URL { get; set; }
-            public string TempleteID { get; set; }
-            public Dictionary<string,string> Template_Variables { get; set; }
+            public List<Base64Attachment> Attachments_Base64 { get; set; }
+            public string TemplateID { get; set; }
+            public Dictionary<string, string> Template_Variables { get; set; }
+        }
+
+        public class Base64Attachment
+        {
+            public string FileName { get; set; }
+            public string Content_Type { get; set; }
+            public string Base64_Content { get; set; }
         }
 
         public static string ConvertRequestValue(string input)
