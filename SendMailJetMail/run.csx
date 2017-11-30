@@ -1,4 +1,3 @@
-#r "Mailjet.Client.dll"
 #r "Newtonsoft.Json.dll"
 
 using System.Net;
