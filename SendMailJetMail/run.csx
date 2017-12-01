@@ -17,6 +17,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             const string _contentType = "Content-Type";
             const string _fileName = "Filename";
             const string _content = "Content";
+            JArray mail_data = new JArray();
 
             dynamic data = await req.Content.ReadAsAsync<object>();
 
@@ -34,16 +35,16 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                 mail.senderName = data?.SenderName ?? string.Empty;
                 mail.senderName_AppSetting = data?.SenderName_AppSetting ?? string.Empty;
 
-                mail.mjAPI_PubK = !string.IsNullOrEmpty(mail.mjAPI_PubK) ? mail.mjAPI_PubK : !string.IsNullOrEmpty(mail.mjAPI_PubK_AppSetting)? 
-                    System.Environment.GetEnvironmentVariable(mail.mjAPI_PubK_AppSetting) : string.Empty ;
+                mail.mjAPI_PubK = !string.IsNullOrEmpty(mail.mjAPI_PubK) ? mail.mjAPI_PubK : !string.IsNullOrEmpty(mail.mjAPI_PubK_AppSetting) ?
+                    System.Environment.GetEnvironmentVariable(mail.mjAPI_PubK_AppSetting) : string.Empty;
 
-                mail.mjAPI_PriK = !string.IsNullOrEmpty(mail.mjAPI_PriK) ? mail.mjAPI_PriK : !string.IsNullOrEmpty(mail.mjAPI_PriK_AppSetting)?
+                mail.mjAPI_PriK = !string.IsNullOrEmpty(mail.mjAPI_PriK) ? mail.mjAPI_PriK : !string.IsNullOrEmpty(mail.mjAPI_PriK_AppSetting) ?
                     System.Environment.GetEnvironmentVariable(mail.mjAPI_PriK_AppSetting) : string.Empty;
 
-                mail.senderMail = !string.IsNullOrEmpty(mail.senderMail) ? mail.senderMail : !string.IsNullOrEmpty(mail.senderMail_AppSetting)?
+                mail.senderMail = !string.IsNullOrEmpty(mail.senderMail) ? mail.senderMail : !string.IsNullOrEmpty(mail.senderMail_AppSetting) ?
                     System.Environment.GetEnvironmentVariable(mail.senderMail_AppSetting) : string.Empty;
 
-                mail.senderName = !string.IsNullOrEmpty(mail.senderName) ? mail.senderName : !string.IsNullOrEmpty(mail.senderName_AppSetting)?
+                mail.senderName = !string.IsNullOrEmpty(mail.senderName) ? mail.senderName : !string.IsNullOrEmpty(mail.senderName_AppSetting) ?
                     System.Environment.GetEnvironmentVariable(mail.senderName_AppSetting) : string.Empty;
 
                 mail.subject = data?.Subject ?? string.Empty;
@@ -89,16 +90,12 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                     }
                 }
 
-                //JObject[] attachmentMails = null;
                 List<JObject> attachmentMails = new List<JObject>();
 
                 if (!string.IsNullOrEmpty(mail.Attachment_URL))
                 {
                     string[] attachments = mail.Attachment_URL.Split(Convert.ToChar(separate_symbol));
 
-                    //attachmentMails = new JObject[attachments.Length];
-
-                    //for (int i = 0; i < attachments.Length; i++)
                     foreach (string at in attachments)
                     {
                         string file_name = string.Empty;
@@ -108,7 +105,6 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
 
                         using (WebClient wc = new WebClient())
                         {
-                            //string uri = attachments[i];
                             string[] uri_content = at.Split('/');//uri.Split('/');
                             //Get file name from URL.
                             fileName = uri_content[uri_content.Length - 1];
@@ -131,11 +127,11 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                     }
                 }
 
-                if(mail.Attachments_Base64 != null)
+                if (mail.Attachments_Base64 != null)
                 {
-                    foreach(Base64Attachment at in mail.Attachments_Base64)
+                    foreach (Base64Attachment at in mail.Attachments_Base64)
                     {
-                        if(!string.IsNullOrEmpty(at.FileName) && !string.IsNullOrEmpty(at.Content_Type) && !string.IsNullOrEmpty(at.Base64_Content))
+                        if (!string.IsNullOrEmpty(at.FileName) && !string.IsNullOrEmpty(at.Content_Type) && !string.IsNullOrEmpty(at.Base64_Content))
                             attachmentMails.Add(new JObject {{_contentType, at.Content_Type},
                                           {_fileName,at.FileName},
                                           {_content,at.Base64_Content}});
@@ -167,6 +163,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                 MailjetResponse response = await client.PostAsync(request);
                 if (response.IsSuccessStatusCode)
                 {
+                    mail_data = response.GetData();
                     log.Info(string.Format($"Total: {response.GetTotal()}, Count: {response.GetCount()}\n"));
                     log.Info(response.GetData().ToString());
                     hasError = false;
@@ -182,8 +179,11 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                     errorMessage = $"StatusCode: {response.StatusCode} ";
                     errorMessage += $"ErrorInfo: {response.GetErrorInfo()} ";
                     errorMessage += $"ErrorMessage: {response.GetErrorMessage()}";
-                    return req.CreateResponse((System.Net.HttpStatusCode)response.StatusCode, new JObject { { "result", $"Sending mail fail!! {errorMessage}" } });
-                }                
+                    return req.CreateResponse((System.Net.HttpStatusCode)response.StatusCode, new JObject {
+                        { "result", $"Email did not successfully send!! {errorMessage}" },
+                        { "sentEmailsInfo", mail_data }
+                    });
+                }
             }
             catch (Exception ex)
             {
@@ -192,8 +192,14 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             }
 
             return hasError
-                ? req.CreateResponse(HttpStatusCode.BadRequest, new JObject { { "result", $"Sending mail fail!! {errorMessage}" } })
-                : req.CreateResponse(HttpStatusCode.OK, new JObject { { "result", "Sending mail success." } });
+                ? req.CreateResponse(HttpStatusCode.BadRequest, new JObject {
+                    { "result", $"Email did not successfully send!! {errorMessage}" },
+                    { "sentEmailsInfo", mail_data }
+                })
+                : req.CreateResponse(HttpStatusCode.OK, new JObject {
+                    { "result", "Emails successfully sent." },
+                    { "sentEmailsInfo", mail_data }
+                });
         }
 
         public class MailContents
