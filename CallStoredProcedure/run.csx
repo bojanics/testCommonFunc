@@ -31,173 +31,172 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             JObject response_body = new JObject();
             JObject _table = new JObject();
 
-            string connectionString = string.Empty;
-            string storedP = string.Empty;
-            string connStrP = string.Empty;
-            string connNameP = string.Empty;
-
             dynamic param_s = null;
             dynamic data = null;
+            SqlConnection conn = null;
 
-            data = await req.Content.ReadAsAsync<object>();
-            connStrP = data["ConnectionString"];
-            connNameP = data["ConnectionName"];
-            storedP = data["StoredProcedureName"];
-
-            if (!string.IsNullOrEmpty(connStrP))
-                connectionString = connStrP;
-            else if (!string.IsNullOrEmpty(connNameP))
-                connectionString = ConfigurationManager.ConnectionStrings[connNameP].ConnectionString;
-            else
-                connectionString = string.Empty;
-
-            using (SqlConnection conn = new SqlConnection(connectionString))
+            try
             {
-                conn.Open();
-                try
+
+                data = await req.Content.ReadAsAsync<object>();
+                string connectionString = data?.ConnectionString ?? string.Empty;
+                string connectionString_app_setting = data?.ConnectionString_AppSettingName ?? string.Empty;
+                string stored_prcedure_name = data?.StoredProcedureName ?? string.Empty;
+
+                if (string.IsNullOrEmpty(connectionString) && string.IsNullOrEmpty(connectionString_app_setting))
+                    connectionString = System.Environment.GetEnvironmentVariable("DEFAULT_ConnectionString");
+                else if (string.IsNullOrEmpty(connectionString) && !string.IsNullOrEmpty(connectionString_app_setting))
+                    connectionString = System.Environment.GetEnvironmentVariable(connectionString_app_setting);
+
+                if (string.IsNullOrEmpty(connectionString))
+                    throw new Exception("Connection String is missing.");
+
+                using (conn = new SqlConnection(connectionString))
                 {
-                    using (SqlCommand cmd = new SqlCommand(storedP, conn))
-                    {
-                        cmd.CommandType = CommandType.StoredProcedure;
-
-                        SqlCommandBuilder.DeriveParameters(cmd);
-
-                        //Get input and output column in StoredProcedure.
-                        GetParameterColumn(ref lstParamIn, ref lstParamOut, ref returnColName, cmd.Parameters);
-
-                        param_s = data["Parameters"];
-
-                        int i = 0;
-                        if (param_s != null && cmd.Parameters.Count > 0)
+                    conn.Open();
+                
+                        using (SqlCommand cmd = new SqlCommand(stored_prcedure_name, conn))
                         {
-                            foreach (ColumnDetail obj in lstParamIn)
-                            {
-                                string colName = obj.ColumnName.Replace("@", string.Empty);
-                                object val = null;
-                                val = param_s[colName];
+                            cmd.CommandType = CommandType.StoredProcedure;
 
-                                if (val != null)
+                            SqlCommandBuilder.DeriveParameters(cmd);
+
+                            //Get input and output column in StoredProcedure.
+                            GetParameterColumn(ref lstParamIn, ref lstParamOut, ref returnColName, cmd.Parameters);
+
+                            param_s = data["Parameters"];
+
+                            int i = 0;
+                            if (param_s != null && cmd.Parameters.Count > 0)
+                            {
+                                foreach (ColumnDetail obj in lstParamIn)
                                 {
-                                    cmd.Parameters[obj.ColumnName].Value = ConvertSqldata(obj.ColumnType, val);
+                                    string colName = obj.ColumnName.Replace("@", string.Empty);
+                                    object val = null;
+                                    val = param_s[colName];
+
+                                    if (val != null)
+                                    {
+                                        cmd.Parameters[obj.ColumnName].Value = ConvertSqldata(obj.ColumnType, val);
+                                    }
+
+                                    i++;
+                                }
+                            }
+
+                            if (cmd.Parameters.Count > 0)
+                            {
+                                for (i = 0; i < cmd.Parameters.Count; i++)
+                                {
+                                    if (cmd.Parameters[i].Direction == ParameterDirection.InputOutput && cmd.Parameters[i].Value == null)
+                                        cmd.Parameters[i].Direction = ParameterDirection.Output;
+                                }
+                            }
+
+                            DataSet ds = new DataSet();
+                            SqlDataAdapter resultAdapter = new SqlDataAdapter(cmd);
+                            resultAdapter.Fill(ds);
+
+                            int tableNum = 0;
+
+                            foreach (DataTable dt in ds.Tables)
+                            {
+                                JArray _table_ar = new JArray();
+                                foreach (DataRow row in dt.Rows)
+                                {
+                                    JObject _row = new JObject();
+                                    foreach (DataColumn column in dt.Columns)
+                                    {
+                                        row[column] = row[column] == null ? string.Empty : row[column];
+
+                                        switch (column.DataType.ToString())
+                                        {
+                                            case "System.String":
+                                                if (!string.IsNullOrEmpty(row[column].ToString()))
+                                                    _row.Add(column.ColumnName, row[column].ToString().Trim());
+                                                else
+                                                    _row.Add(column.ColumnName, _null);
+                                                break;
+                                            case "System.DateTime":
+                                                if (!string.IsNullOrEmpty(row[column].ToString()))
+                                                    _row.Add(column.ColumnName, Convert.ToDateTime(row[column].ToString().Trim()).ToString(dateTimeFormat));
+                                                else
+                                                    _row.Add(column.ColumnName, _null);
+                                                break;
+                                            case "System.Boolean":
+                                                if (!string.IsNullOrEmpty(row[column].ToString()))
+                                                    _row.Add(column.ColumnName, Convert.ToBoolean(row[column].ToString().Replace("F", "f").Replace("T", "t")));
+                                                else
+                                                    _row.Add(column.ColumnName, _null);
+                                                break;
+                                            case "System.Byte[]":
+                                                if (!string.IsNullOrEmpty(row[column].ToString()))
+                                                    _row.Add(column.ColumnName, BitConverter.ToString((byte[])row[column]));
+                                                else
+                                                    _row.Add(column.ColumnName, _null);
+                                                break;
+                                            case "System.Int32":
+                                                if (!string.IsNullOrEmpty(row[column].ToString()))
+                                                    _row.Add(column.ColumnName, int.Parse(row[column].ToString()));
+                                                else
+                                                    _row.Add(column.ColumnName, _null);
+                                                break;
+                                            case "System.Decimal":
+                                                if (!string.IsNullOrEmpty(row[column].ToString()))
+                                                    _row.Add(column.ColumnName, decimal.Parse(row[column].ToString()));
+                                                else
+                                                    _row.Add(column.ColumnName, _null);
+                                                break;
+                                            default:
+                                                if (!string.IsNullOrEmpty(row[column].ToString()))
+                                                    _row.Add(column.ColumnName, row[column].ToString());
+                                                else
+                                                    _row.Add(column.ColumnName, _null);
+                                                break;
+                                        }
+                                    }
+
+                                    _table_ar.Add(_row);
                                 }
 
+                                tableNum++;
+
+                                _table.Add($"Table{tableNum}", _table_ar);
+                            }
+
+                            i = 0;
+                            foreach (ColumnDetail obj in lstParamOut)
+                            {
+                                lstParamOut[i].ColumnValue = cmd.Parameters[obj.ColumnName].Value == null ? "" : cmd.Parameters[obj.ColumnName].Value.ToString().Trim();
                                 i++;
                             }
+
+                            returnValue = cmd.Parameters[returnColName].Value == null ? 0 : (int)cmd.Parameters[returnColName].Value;
+
                         }
-
-                        if(cmd.Parameters.Count > 0)
-                        {
-                            for(i=0;i < cmd.Parameters.Count; i++)
-                            {
-                                if (cmd.Parameters[i].Direction == ParameterDirection.InputOutput && cmd.Parameters[i].Value == null)
-                                    cmd.Parameters[i].Direction = ParameterDirection.Output;
-                            }
-                        }
-
-                        DataSet ds = new DataSet();
-                        SqlDataAdapter resultAdapter = new SqlDataAdapter(cmd);
-                        resultAdapter.Fill(ds);
-
-                        int tableNum = 0;
-                        
-                        foreach (DataTable dt in ds.Tables)
-                        {
-                            JArray _table_ar = new JArray();
-                            foreach (DataRow row in dt.Rows)
-                            {
-                                JObject _row = new JObject();
-                                foreach (DataColumn column in dt.Columns)
-                                {
-                                    row[column] = row[column] == null ? string.Empty : row[column];
-
-                                    switch (column.DataType.ToString())
-                                    {
-                                        case "System.String":
-                                            if (!string.IsNullOrEmpty(row[column].ToString()))
-                                                _row.Add(column.ColumnName, row[column].ToString().Trim());
-                                            else
-                                                _row.Add(column.ColumnName, _null);
-                                            break;
-                                        case "System.DateTime":
-                                            if (!string.IsNullOrEmpty(row[column].ToString()))
-                                                _row.Add(column.ColumnName, Convert.ToDateTime(row[column].ToString().Trim()).ToString(dateTimeFormat));
-                                            else
-                                                _row.Add(column.ColumnName, _null);
-                                            break;
-                                        case "System.Boolean":
-                                            if (!string.IsNullOrEmpty(row[column].ToString()))
-                                                _row.Add(column.ColumnName, Convert.ToBoolean(row[column].ToString().Replace("F", "f").Replace("T", "t")));
-                                            else
-                                                _row.Add(column.ColumnName, _null);
-                                            break;
-                                        case "System.Byte[]":
-                                            if (!string.IsNullOrEmpty(row[column].ToString()))
-                                                _row.Add(column.ColumnName, BitConverter.ToString((byte[])row[column]));
-                                            else
-                                                _row.Add(column.ColumnName, _null);
-                                            break;
-                                        case "System.Int32":
-                                            if (!string.IsNullOrEmpty(row[column].ToString()))
-                                                _row.Add(column.ColumnName, int.Parse(row[column].ToString()));
-                                            else
-                                                _row.Add(column.ColumnName, _null);
-                                            break;
-                                        case "System.Decimal":
-                                            if (!string.IsNullOrEmpty(row[column].ToString()))
-                                                _row.Add(column.ColumnName, decimal.Parse(row[column].ToString()));
-                                            else
-                                                _row.Add(column.ColumnName, _null);
-                                            break;
-                                        default:
-                                            if (!string.IsNullOrEmpty(row[column].ToString()))
-                                                _row.Add(column.ColumnName, row[column].ToString());
-                                            else
-                                                _row.Add(column.ColumnName, _null);
-                                            break;
-                                    }
-                                }
-
-                                _table_ar.Add(_row);
-                            }
-
-                            tableNum++;
-
-                            _table.Add($"Table{tableNum}", _table_ar);
-                        }
-
-                        i = 0;
-                        foreach (ColumnDetail obj in lstParamOut)
-                        {
-                            lstParamOut[i].ColumnValue = cmd.Parameters[obj.ColumnName].Value == null ? "" : cmd.Parameters[obj.ColumnName].Value.ToString().Trim();
-                            i++;
-                        }
-
-                        returnValue = cmd.Parameters[returnColName].Value == null ? 0 : (int)cmd.Parameters[returnColName].Value;
-
-                    }
-
                 }
-                catch (SqlException ex)
-                {
+            }
+             catch (SqlException ex)
+            {
+                statusCode = HttpStatusCode.OK;
+                returnValue = ex.Number;
+                errorMessage = ex.Message;
+                hasError = false;
+            }
+            catch (Exception ex)
+            {
+                statusCode = HttpStatusCode.InternalServerError;
+                errorMessage = ex.Message;
+                returnValue = -1;
+                hasError = true;
+            }
+            finally
+            {
+                if (!hasError)
                     statusCode = HttpStatusCode.OK;
-                    returnValue = ex.Number;
-                    errorMessage = ex.Message;
-                    hasError = false;
-                }
-                catch (Exception ex)
-                {
-                    statusCode = HttpStatusCode.BadRequest;
-                    errorMessage = ex.Message;
-                    returnValue = -1;
-                    hasError = true;
-                }
-                finally
-                {
-                    if (!hasError)
-                        statusCode = HttpStatusCode.OK;
-                }
 
-                conn.Close();
+                if(conn != null)
+                    conn.Close();
             }
 
             JObject _outP = new JObject();
@@ -206,7 +205,8 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                 foreach (ColumnDetail obj in lstParamOut)
                 {
                     obj.ColumnName = obj.ColumnName.Replace("@", string.Empty);
-                    switch (obj.ColumnType){
+                    switch (obj.ColumnType)
+                    {
                         case SqlDbType.Int:
                             if (!string.IsNullOrEmpty(obj.ColumnValue.ToString()))
                                 _outP.Add(obj.ColumnName, int.Parse(obj.ColumnValue.ToString()));
@@ -242,7 +242,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                             _outP.Add(obj.ColumnName, (string)obj.ColumnValue);
                             break;
                     }
-                   
+
                 }
             }
             response_body.Add("OutputParameters", _outP);
@@ -250,9 +250,8 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             response_body.Add("ErrorMessage", errorMessage);
             response_body.Add("ResultSets", _table);
 
-            return hasError
-            ? req.CreateResponse(HttpStatusCode.BadRequest, response_body)
-            : req.CreateResponse(HttpStatusCode.OK, response_body);
+            return req.CreateResponse(statusCode, response_body);
+            
         }
 
         public static void GetParameterColumn(ref List<ColumnDetail> pIn, ref List<ColumnDetail> pOut, ref string returnColName, SqlParameterCollection param)
@@ -279,47 +278,6 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                         break;
                 }
             }
-        }
-
-        public static string ConvertSQLDataToDisplay(SqlDbType type, object inputValue)
-        {
-            string result = string.Empty;
-
-            switch (type)
-            {
-                case SqlDbType.Int:
-                case SqlDbType.BigInt:
-                case SqlDbType.Bit:
-                case SqlDbType.Real:
-                case SqlDbType.Decimal:
-                case SqlDbType.Float:
-                case SqlDbType.Money:
-                case SqlDbType.SmallInt:
-                case SqlDbType.SmallMoney:
-                case SqlDbType.TinyInt:
-                    result = $"{inputValue.ToString()}";
-                    break;
-                case SqlDbType.Char:
-                case SqlDbType.NChar:
-                case SqlDbType.VarChar:
-                case SqlDbType.NVarChar:
-                case SqlDbType.Text:
-                case SqlDbType.NText:
-                case SqlDbType.Date:
-                case SqlDbType.DateTime:
-                case SqlDbType.DateTime2:
-                case SqlDbType.DateTimeOffset:
-                case SqlDbType.SmallDateTime:
-                case SqlDbType.Time:
-                case SqlDbType.Timestamp:
-                    result = result = $"\"{inputValue.ToString()}\"";
-                    break;
-                default:
-                    result = $"\"{inputValue.ToString()}\"";
-                    break;
-            }
-
-            return result;
         }
 
         public static object ConvertSqldata(SqlDbType type, object inputValue)
