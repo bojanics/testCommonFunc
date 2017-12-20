@@ -34,69 +34,79 @@ private static readonly SecureRandom Random = new SecureRandom();
 
 public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceWriter log)
 {
-            Request_Data _data = new Request_Data();
-            dynamic data = await req.Content.ReadAsAsync<object>();
-            _data.key = data?.key;
-            _data.expire = data?.expire;
-            if(data?.countries_allow != null)
-                _data.countries_allow = ConvertRequestValue(data?.countries_allow.ToString());
-            if(data?.referer_allow != null)
-                _data.ref_allow = ConvertRequestValue(data?.referer_allow.ToString());
-            _data.proto_allow = data?.proto_allow;
-            _data.clientip = data?.clientip;
-            if(data?.url_allow != null)
-                _data.url_allow = ConvertRequestValue(data?.url_allow.ToString());
-            if(data?.countries_deny != null)
-                _data.countries_deny = ConvertRequestValue(data?.countries_deny.ToString());
-            if(data?.referer_deny != null)
-                _data.ref_deny = ConvertRequestValue(data?.referer_deny.ToString());
-            _data.proto_deny = data?.proto_deny;
-
-            DateTime epochTimeStart = new DateTime(1970, 1, 1);
-            TimeSpan epTime = DateTime.UtcNow - epochTimeStart;
-
-            if (!string.IsNullOrEmpty(_data.expire))
-            {
-                DateTime expireDate = Convert.ToDateTime(_data.expire);
-                epTime = expireDate - epochTimeStart;
-            }
-
-            string token = string.Empty;
-            if(!string.IsNullOrEmpty(_data.expire))
-                token += $"ec_expire={epTime.TotalSeconds}&";
-
-            if (!string.IsNullOrEmpty(_data.countries_allow))
-                token += $"ec_country_allow={_data.countries_allow}&";
-
-            if (!string.IsNullOrEmpty(_data.ref_allow))
-                token += $"ec_ref_allow={_data.ref_allow}&";
-
-            if (!string.IsNullOrEmpty(_data.proto_allow))
-                token += $"ec_proto_allow={_data.proto_allow}&";
-
-            if (!string.IsNullOrEmpty(_data.clientip))
-                token += $"ec_clientip={_data.clientip}&";
-
-            if (!string.IsNullOrEmpty(_data.url_allow))
-                token += $"ec_url_allow={_data.url_allow}&";
-
-            if (!string.IsNullOrEmpty(_data.countries_deny))
-                token += $"ec_country_deny={_data.countries_deny}&";
-
-            if (!string.IsNullOrEmpty(_data.ref_deny))
-                token += $"ec_ref_deny={_data.ref_deny}&";
-
-            if (!string.IsNullOrEmpty(_data.proto_deny))
-                token += $"ec_proto_deny={_data.proto_deny}";
-
-            if (token.EndsWith("&"))
-                token = token.Substring(0, token.Length - 1);
-
             string strResult = "";
+
             try
             {
-                // variables to store the key and token
-                string strKey = _data.key;
+                Request_Data _data = new Request_Data();
+                dynamic data = await req.Content.ReadAsAsync<object>();
+                _data.key = data?.key ?? string.Empty;
+                string default_key = data?.key_AppSettingName ?? string.Empty;
+
+                if (string.IsNullOrEmpty(_data.key) && string.IsNullOrEmpty(default_key))
+                    _data.key = System.Environment.GetEnvironmentVariable("DEFAULT_key");
+                else if (string.IsNullOrEmpty(_data.key) && !string.IsNullOrEmpty(default_key))
+                    _data.key = System.Environment.GetEnvironmentVariable(default_key);
+
+                if(string.IsNullOrEmpty(_data.key))
+                    throw new Exception("The key to generate token is missing.");
+
+                _data.expire = data?.expire ?? string.Empty;
+
+                if (data?.countries_allow != null)
+                    _data.countries_allow = ConvertRequestValue(data?.countries_allow.ToString());
+                if (data?.referer_allow != null)
+                    _data.ref_allow = ConvertRequestValue(data?.referer_allow.ToString());
+                _data.proto_allow = data?.proto_allow;
+                _data.clientip = data?.clientip;
+                if (data?.url_allow != null)
+                    _data.url_allow = ConvertRequestValue(data?.url_allow.ToString());
+                if (data?.countries_deny != null)
+                    _data.countries_deny = ConvertRequestValue(data?.countries_deny.ToString());
+                if (data?.referer_deny != null)
+                    _data.ref_deny = ConvertRequestValue(data?.referer_deny.ToString());
+                _data.proto_deny = data?.proto_deny;
+
+                DateTime epochTimeStart = new DateTime(1970, 1, 1);
+                TimeSpan epTime = DateTime.UtcNow - epochTimeStart;
+
+                if (!string.IsNullOrEmpty(_data.expire))
+                {
+                    DateTime expireDate = Convert.ToDateTime(_data.expire);
+                    epTime = expireDate - epochTimeStart;
+                }
+
+                string token = string.Empty;
+                if (!string.IsNullOrEmpty(_data.expire))
+                    token += $"ec_expire={epTime.TotalSeconds}&";
+
+                if (!string.IsNullOrEmpty(_data.countries_allow))
+                    token += $"ec_country_allow={_data.countries_allow}&";
+
+                if (!string.IsNullOrEmpty(_data.ref_allow))
+                    token += $"ec_ref_allow={_data.ref_allow}&";
+
+                if (!string.IsNullOrEmpty(_data.proto_allow))
+                    token += $"ec_proto_allow={_data.proto_allow}&";
+
+                if (!string.IsNullOrEmpty(_data.clientip))
+                    token += $"ec_clientip={_data.clientip}&";
+
+                if (!string.IsNullOrEmpty(_data.url_allow))
+                    token += $"ec_url_allow={_data.url_allow}&";
+
+                if (!string.IsNullOrEmpty(_data.countries_deny))
+                    token += $"ec_country_deny={_data.countries_deny}&";
+
+                if (!string.IsNullOrEmpty(_data.ref_deny))
+                    token += $"ec_ref_deny={_data.ref_deny}&";
+
+                if (!string.IsNullOrEmpty(_data.proto_deny))
+                    token += $"ec_proto_deny={_data.proto_deny}";
+
+                if (token.EndsWith("&"))
+                    token = token.Substring(0, token.Length - 1);
+            
                 string strToken = token;
 
                 bool isEncrypt = true;
@@ -109,14 +119,12 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                 //if (args.Length > 2){ if(args[2] == VERBOSE_COMMAND)  blnVerbose = true;}
                 //if (args.Length > 3) { if (args[3] == VERBOSE_COMMAND) blnVerbose = true; }
 
-                
-
                 // if this is a decrypt function, then take an encrypted token and decrypt it
                 if (isEncrypt)
                 {
                     try
                     {
-                        strResult = EncryptV3(strKey, strToken, blnVerbose);
+                        strResult = EncryptV3(_data.key, strToken, blnVerbose);
 
                         if (string.IsNullOrEmpty(strResult))
                             log.Info("Failed to encrypt token");
@@ -134,7 +142,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                 {
                     try
                     {
-                        strResult = DecryptV3(strKey, strToken, blnVerbose);
+                        strResult = DecryptV3(_data.key, strToken, blnVerbose);
                         if (string.IsNullOrEmpty(strResult))
                         {
                             log.Info("Failed to decrypt token.");
@@ -164,13 +172,18 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             }
             catch (System.Exception ex)
             {
-                return req.CreateResponse(HttpStatusCode.BadRequest, ex.Message);
+                return req.CreateResponse(HttpStatusCode.InternalServerError, new JObject {
+                    { "token", strResult},
+                    { "errorMessage", ex.Message }
+                });
             }
 
             log.Info($"Edgcast Token = {strResult}");
 
-            return req.CreateResponse(HttpStatusCode.OK, new JObject{ {"token", strResult } } );
-}
+            return req.CreateResponse(HttpStatusCode.OK, new JObject {
+                { "token", strResult},
+                { "errorMessage", string.Empty } });
+        }
 
 public static string NextRandomString(int length)
         {
